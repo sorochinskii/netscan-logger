@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import logging
 from datetime import datetime
 from ipaddress import (IPv4Address, IPv4Interface, IPv4Network, ip_network,
                        summarize_address_range)
@@ -10,8 +11,17 @@ import netifaces
 from aiodns import DNSResolver
 from aiodns.error import DNSError
 from icmplib import async_multiping
+from log_settings.settings import LoggingContext
 from mac_vendor_lookup import (AsyncMacLookup, InvalidMacError, MacLookup,
                                VendorNotFoundError)
+from utils import utils
+
+logger = logging.getLogger("Scanner")
+file_handler = logging.FileHandler("log.log")
+file_formater = logging.Formatter(
+    fmt="{asctime} - {levelname} - {name} - {message}", style="{"
+)
+file_handler.setFormatter(file_formater)
 
 
 class Devices:
@@ -46,23 +56,24 @@ class Devices:
         """
         Возвращает следующую порцию устройств.
         """
+        with LoggingContext(logger, level="DEBUG",
+                            handler=file_handler, fmt=file_formater):
+            logger.debug("Next chunk started.")
         ips = next(self._alives_gen)
         macs = Scan.get_macs(ips)
         hostnames = asyncio.run(Scan.get_hostnames(ips))
         vendors = asyncio.run(Scan.get_vendors(macs))
-        ips_str = map(str, ips)
-        zipped_devices = zip(macs, hostnames, vendors, ips_str)
-        result = []
-        for device in zipped_devices:
-            result.append(
-                {
-                    "ip": device[3],
-                    "mac": device[0],
-                    "hostname": device[1],
-                    "vendor": device[2],
-                }
-            )
-        return result
+        ips_list = list(map(str, ips))
+        ips_list.append("someshit")
+        try:
+            lengths = len(ips_list), len(macs), len(hostnames), len(vendors)
+            utils.check_inequality(*lengths)
+        except utils.ListsNotEqualException:
+            with LoggingContext(logger, handler=file_handler):
+                logger.exception(Exception)
+        devices = utils.to_lists_of_dicts(
+            ip=ips, mac=macs, hostname=hostnames, vendor=vendors)
+        return devices
 
     def _get_ifaces_subs(self, exclude: List[str] = None) -> List[IPv4Network]:
         ifaces = Interfaces.get_interfaces(exclude)
