@@ -1,9 +1,15 @@
 import asyncio
 import itertools
 import logging
+import logging.config
 from datetime import datetime
-from ipaddress import (IPv4Address, IPv4Interface, IPv4Network, ip_network,
-                       summarize_address_range)
+from ipaddress import (
+    IPv4Address,
+    IPv4Interface,
+    IPv4Network,
+    ip_network,
+    summarize_address_range,
+)
 from typing import List, Union
 
 import arpreq
@@ -11,17 +17,17 @@ import netifaces
 from aiodns import DNSResolver
 from aiodns.error import DNSError
 from icmplib import async_multiping
-from log_settings.settings import LoggingContext
-from mac_vendor_lookup import (AsyncMacLookup, InvalidMacError, MacLookup,
-                               VendorNotFoundError)
+from log_settings.settings import LoggingContext, logger_config
+from mac_vendor_lookup import (
+    AsyncMacLookup,
+    InvalidMacError,
+    MacLookup,
+    VendorNotFoundError,
+)
 from utils import utils
 
-logger = logging.getLogger("Scanner")
-file_handler = logging.FileHandler("log.log")
-file_formater = logging.Formatter(
-    fmt="{asctime} - {levelname} - {name} - {message}", style="{"
-)
-file_handler.setFormatter(file_formater)
+logging.config.dictConfig(logger_config)
+logger = logging.getLogger("scanner")
 
 
 class Devices:
@@ -56,23 +62,20 @@ class Devices:
         """
         Возвращает следующую порцию устройств.
         """
-        with LoggingContext(logger, level="DEBUG",
-                            handler=file_handler, fmt=file_formater):
-            logger.debug("Next chunk started.")
+        logger.debug("Next chunk started.")
         ips = next(self._alives_gen)
         macs = Scan.get_macs(ips)
         hostnames = asyncio.run(Scan.get_hostnames(ips))
         vendors = asyncio.run(Scan.get_vendors(macs))
         ips_list = list(map(str, ips))
-        ips_list.append("someshit")
+        lengths = len(ips_list), len(macs), len(hostnames), len(vendors)
         try:
-            lengths = len(ips_list), len(macs), len(hostnames), len(vendors)
             utils.check_inequality(*lengths)
-        except utils.ListsNotEqualException:
-            with LoggingContext(logger, handler=file_handler):
-                logger.exception(Exception)
+        except utils.ListsNotEqualException as e:
+            logger.exception(e)
         devices = utils.to_lists_of_dicts(
-            ip=ips, mac=macs, hostname=hostnames, vendor=vendors)
+            ip=ips, mac=macs, hostname=hostnames, vendor=vendors
+        )
         return devices
 
     def _get_ifaces_subs(self, exclude: List[str] = None) -> List[IPv4Network]:
@@ -94,6 +97,7 @@ class Interfaces:
     """
     Работа с интерфейсами.
     """
+
     @staticmethod
     def get_interfaces(
         exclude: List[IPv4Interface] = None,
@@ -101,7 +105,13 @@ class Interfaces:
         """
         Получение системных интерфейсов.
         """
+        logger.debug(f"Excluded interfaces {exclude}")
         ifaces = netifaces.interfaces()
+        try:
+            if not ifaces:
+                raise utils.NoInterfaceFoundException
+        except Exception:
+            logger.exception(f"No network interfaces found.")
         if exclude:
             for iface in exclude:
                 ifaces.remove(iface)
@@ -126,6 +136,7 @@ class Subnets:
     """
     Работа с подсетями.
     """
+
     @classmethod
     def get_ranges_from_str(cls, range_addrs: List[str]) -> List[IPv4Network]:
         """
@@ -203,9 +214,7 @@ class Subnets:
 
 
 class Scan:
-
-    def _get_addresses(network: IPv4Network,
-                       chunk_size) -> List[IPv4Address]:
+    def _get_addresses(network: IPv4Network, chunk_size) -> List[IPv4Address]:
         hosts = network.hosts()
         while True:
             try:
@@ -225,11 +234,11 @@ class Scan:
 
     @classmethod
     def get_macs(cls, hosts: List[IPv4Address]) -> List[str]:
+        logger.debug("Get macs started.")
         macs = map(cls._arpreq_or_na, hosts)
         return list(macs)
 
-    async def _get_hostname(
-            resolver: DNSResolver, address: IPv4Address) -> str:
+    async def _get_hostname(resolver: DNSResolver, address: IPv4Address) -> str:
         try:
             str_ip = str(address)
             temp = await resolver.gethostbyaddr(str_ip)
@@ -240,6 +249,7 @@ class Scan:
 
     @classmethod
     async def get_hostnames(cls, ips: List[IPv4Address]) -> List[str]:
+        logger.debug("Get hostnames.")
         loop = asyncio.get_running_loop()
         resolver = DNSResolver(loop=loop)
         results = await asyncio.gather(
@@ -256,11 +266,13 @@ class Scan:
         return addresses
 
     @classmethod
-    def get_alives_gen(cls, networks: List[IPv4Network],
-                       chunk_size) -> List[IPv4Address]:
+    def get_alives_gen(
+        cls, networks: List[IPv4Network], chunk_size
+    ) -> List[IPv4Address]:
         """
         Генератор возвращающий список пигуемых адресов.
         """
+        logger.debug("Get alives generator.")
         for network in networks:
             addresses_gen = cls._get_addresses(network, chunk_size)
             try:
@@ -282,5 +294,6 @@ class Scan:
 
     @classmethod
     async def get_vendors(cls, macs: List[str]) -> List[str]:
+        logger.debug("Get vendors.")
         results = list(map(cls._get_vendor, macs))
         return await asyncio.gather(*results)

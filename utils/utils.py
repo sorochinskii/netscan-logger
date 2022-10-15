@@ -1,4 +1,14 @@
+import logging
+import logging.config
+
+from log_settings.settings import logger_config
+
+
 class ListsNotEqualException(Exception):
+    pass
+
+
+class NoInterfaceFoundException(Exception):
     pass
 
 

@@ -1,4 +1,50 @@
 import logging
+import os
+import sys
+
+from dotenv import dotenv_values, find_dotenv, load_dotenv
+
+load_dotenv(find_dotenv())
+LEVEL = os.environ.get("SCAN_LOGLEVEL", "WARNING")
+
+logger_config = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "std_format": {
+            "format": "{asctime} - {levelname} - {name} - {message}",
+            "style": "{",
+        }
+    },
+    "handlers": {
+        "file_handler": {
+            "class": "logging.FileHandler",
+            "level": LEVEL,
+            "formatter": "std_format",
+            "filename": "log.log",
+        },
+    },
+    "loggers": {
+        "scanner": {
+            "level": LEVEL,
+            "handlers": [
+                "file_handler",
+            ],
+        },
+        "runner": {
+            "level": LEVEL,
+            "handlers": [
+                "file_handler",
+            ],
+        },
+        "scheduler": {
+            "level": "INFO",
+            "handlers": [
+                "file_handler",
+            ],
+        },
+    },
+}
 
 
 class LoggingContext:
