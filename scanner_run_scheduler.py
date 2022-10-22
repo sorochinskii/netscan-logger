@@ -19,7 +19,7 @@ logger = logging.getLogger("scheduler")
 
 def tick():
     logger.info(f"Scheduled scan started at {datetime.now()}")
-    scanner_run.scan_and_commit()
+    scanner_run.scan_and_commit(starter='scheduler')
 
 
 if __name__ == "__main__":

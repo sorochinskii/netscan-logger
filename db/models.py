@@ -21,9 +21,15 @@ class Device(Base):
 
 
 class Scan(Base):
+    STARTER = [
+        ('manual', 'Manual'),
+        ('scheduler', 'Scheduler'),
+        ('api', 'API')
+    ]
+
     __tablename__ = "scan"
 
     id = sa.Column(sa.Integer, primary_key=True)
-    task_id = sa.Column(sa.Integer)
     start = sa.Column(sa.DateTime)
     finish = sa.Column(sa.DateTime)
+    starter = sa.Column(su.ChoiceType(STARTER))

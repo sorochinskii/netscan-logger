@@ -2,15 +2,14 @@ import asyncio
 import logging
 import logging.config
 import sys
+import typing
 from datetime import datetime
 
 import sqlalchemy.orm as orm
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 
-import db
 import scanner
-from db import models, settings
+from db import models
+from db.settings import database as db
 from log_settings.settings import logger_config
 from scanner import scanner
 
@@ -18,20 +17,17 @@ logging.config.dictConfig(logger_config)
 logger = logging.getLogger("scanner")
 
 
-def scan_and_commit():
+def scan_and_commit(starter: str = "manual"):
     """
     Скрипт запуска сканирования и записи результатов в БД.
     В базу устройства записываются порциями.
     """
-    engine = create_engine(settings.SQLALCHEMY_DATABASE_URL)
-    metadata = models.Base.metadata
-
     devices_gen = scanner.Devices()
 
     start_time = datetime.now()
     logger.debug(f"Scan started at {start_time}")
-    with Session(engine) as session:
-        scan = models.Scan(start=start_time)
+    with db.session() as session:
+        scan = models.Scan(start=start_time, starter=starter)
         session.add(scan)
         session.commit()
 
@@ -41,27 +37,32 @@ def scan_and_commit():
         except StopIteration as e:
             break
 
-        with Session(engine) as session:
+        with db.session() as session:
             scan = (
                 session.query(models.Scan)
                 .order_by(models.Scan.id.desc())
                 .first()
             )
-            logger.debug(f"Scan {scan.id}")
+            scan_id = scan.id
+            logger.debug(f"Scan id = {scan_id}")
             devices_bulk = [
                 models.Device(
                     ip=device["ip"],
                     mac=device["mac"],
                     hostname=device["hostname"],
                     vendor=device["vendor"],
-                    scan_id=scan.id,
+                    scan_id=scan_id,
                 )
                 for device in devices
             ]
             session.bulk_save_objects(devices_bulk)
             scan.finish = datetime.now()
             session.add(scan)
-            session.commit()
+            try:
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                logger.exception()
     logger.debug(f"Scan finished at {datetime.now()}")
 
 
